@@ -29,6 +29,32 @@ impl PublicKeyRequest {
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LoginRequest {
+    app_id: String,
+    device_id: String,
+    locale: String,
+    password: String,
+    sdk_version: String,
+    user_id: String,
+    user_id_type: String,
+}
+
+impl LoginRequest {
+    fn new(email: &str, version_prefix: &str, encrypted_password: &str) -> Self {
+        LoginRequest {
+            app_id: "MazdaApp".to_owned(),
+            device_id: format!("{}{}", "ACCT", i32::from_str_radix(&sha256::digest(email)[0..8], 16).unwrap()),
+            locale: "en-US".to_owned(),
+            password: format!("{}{}", version_prefix, encrypted_password),
+            sdk_version: "11.2.0400.001".to_owned(),
+            user_id: email.to_owned(),
+            user_id_type: "email".to_owned(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PublicKeyResponseData {
@@ -38,9 +64,29 @@ struct PublicKeyResponseData {
     version_prefix: String,
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoginResponseData {
+    uid: String,
+    partner2_id: String,
+    partner1_id: String,
+    user_id_type: String,
+    login_with_temporary_password: bool,
+    refresh_token_expiration_ts: u32,
+    access_token: String,
+    user_id: String,
+    access_token_expiration_ts: u32,
+    refresh_token: String,
+}
+
 #[derive(Deserialize)]
 struct PublicKeyResponse {
     data: PublicKeyResponseData,
+}
+
+#[derive(Deserialize)]
+struct LoginResponse {
+    data: LoginResponseData,
 }
 
 fn encrypt_password(
@@ -71,7 +117,7 @@ fn encrypt_password(
     Ok(base64::encode(&buf))
 }
 
-async fn get_public_key(email: &str) -> Result<String, Box<dyn std::error::Error>> {
+async fn get_key_and_version(email: &str) -> Result<(String, String), Box<dyn std::error::Error>> {
     // API endpoint
     let url = "https://ptznwbh8.mazda.com/appapi/v1/system/encryptionKey";
 
@@ -87,23 +133,35 @@ async fn get_public_key(email: &str) -> Result<String, Box<dyn std::error::Error
         .data;
 
     // Return the public key
-    Ok(response.public_key)
+    Ok((response.public_key, response.version_prefix))
+}
+
+async fn get_access_token(email: &str, password: &str, public_key: &str, version_prefix: &str) -> Result<String, Box<dyn std::error::Error>> {
+
+    // API endpoint
+    let url = "https://ptznwbh8.mazda.com/appapi/v1/user/login";
+
+    // Encrypt the provided password using the public key
+    let encrypted_password = encrypt_password(password, public_key)?;
+
+    // Send a POST request to the API for an access token
+    Ok(Client::new().post(url).header("User-Agent", "MyMazda/8.3.0 (iPhone Xr; IOS 15.6)")
+    .json(&LoginRequest::new(email, version_prefix, &encrypted_password))
+    .send().await?.json::<LoginResponse>().await?.data.access_token)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load credentials
-    let email = dotenv::var("EMAIL").unwrap();
-    let password = dotenv::var("PASSWORD").unwrap();
+    let email = &dotenv::var("EMAIL").unwrap();
+    let password = &dotenv::var("PASSWORD").unwrap();
 
-    // Get a public encryption key from the API
-    let public_key = get_public_key(&email).await?;
+    // Get a public encryption key and version prefix from the API
+    let (public_key, version_prefix) = &get_key_and_version(email).await?;
 
-    // Use the public key to encrypt the password
-    let encrypted_password = encrypt_password(&password, &public_key)?;
+    let access_token = get_access_token(email, password, public_key, version_prefix).await?;
 
-    // Print the encrypted password
-    println!("Encrypted password:: {}", encrypted_password);
+    println!("Access token: {}", access_token);
 
     Ok(())
 }
