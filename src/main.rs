@@ -45,7 +45,11 @@ impl LoginRequest {
     fn new(email: &str, version_prefix: &str, encrypted_password: &str) -> Self {
         LoginRequest {
             app_id: "MazdaApp".to_owned(),
-            device_id: format!("{}{}", "ACCT", i32::from_str_radix(&sha256::digest(email)[0..8], 16).unwrap()),
+            device_id: format!(
+                "{}{}",
+                "ACCT",
+                i32::from_str_radix(&sha256::digest(email)[0..8], 16).unwrap()
+            ),
             locale: "en-US".to_owned(),
             password: format!("{}{}", version_prefix, encrypted_password),
             sdk_version: "11.2.0400.001".to_owned(),
@@ -136,8 +140,12 @@ async fn get_key_and_version(email: &str) -> Result<(String, String), Box<dyn st
     Ok((response.public_key, response.version_prefix))
 }
 
-async fn get_access_token(email: &str, password: &str, public_key: &str, version_prefix: &str) -> Result<String, Box<dyn std::error::Error>> {
-
+async fn get_access_token(
+    email: &str,
+    password: &str,
+    public_key: &str,
+    version_prefix: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     // API endpoint
     let url = "https://ptznwbh8.mazda.com/appapi/v1/user/login";
 
@@ -145,9 +153,20 @@ async fn get_access_token(email: &str, password: &str, public_key: &str, version
     let encrypted_password = encrypt_password(password, public_key)?;
 
     // Send a POST request to the API for an access token
-    Ok(Client::new().post(url).header("User-Agent", "MyMazda/8.3.0 (iPhone Xr; IOS 15.6)")
-    .json(&LoginRequest::new(email, version_prefix, &encrypted_password))
-    .send().await?.json::<LoginResponse>().await?.data.access_token)
+    Ok(Client::new()
+        .post(url)
+        .header("User-Agent", "MyMazda/8.3.0 (iPhone Xr; IOS 15.6)")
+        .json(&LoginRequest::new(
+            email,
+            version_prefix,
+            &encrypted_password,
+        ))
+        .send()
+        .await?
+        .json::<LoginResponse>()
+        .await?
+        .data
+        .access_token)
 }
 
 #[tokio::main]
