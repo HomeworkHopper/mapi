@@ -388,7 +388,9 @@ dependencies = [
 name = "mapi"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "dotenv",
+ "openssl",
  "reqwest",
  "serde",
  "sha256",
